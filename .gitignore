@@ -1,0 +1,11 @@
+*.obj
+*.pch
+*.dll
+*.lib
+*.exe
+*.vcxproj.user
+*.idb
+**/x64/*
+**/Debug/*
+.vs/*
+Problem1/aoc_2022_day01_large_input.txt
