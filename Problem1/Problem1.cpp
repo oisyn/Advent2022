@@ -1,5 +1,37 @@
 #include "pch.h"
 
+#define CV_ENABLE		0	// whether the concurrency visualizer code is enabled
+
+#if CV_ENABLE
+#include <cvmarkersobj.h>
+using namespace Concurrency::diagnostic;
+
+marker_series g_markerSeries(L"Problem1");
+
+#define CV_MARKER(x) g_markerSeries.write_flag(x)
+#define CV_SCOPED_SPAN(x) span myspan ## __COUNTER__(g_markerSeries, x)
+
+union delayed_span
+{
+	delayed_span(const wchar_t* x) : s(g_markerSeries, x) { }
+	delayed_span(const delayed_span&) = delete;
+	~delayed_span() { }
+	span s;
+};
+
+#define CV_SPAN_START(name, x) delayed_span cvspan_ ## name(x)
+#define CV_SPAN_STOP(name) cvspan_ ## name.s.~span()
+
+#else
+
+#define CV_MARKER(x) do;while(0)
+#define CV_SCOPED_SPAN(x) do;while(0)
+#define CV_SPAN_START(name, x) do;while(0)
+#define CV_SPAN_STOP(name) do;while(0)
+
+#endif
+
+
 using uint = unsigned int;
 using ullong = unsigned long long;
 static constexpr size_t RegSize = sizeof(__m256i);
@@ -42,13 +74,15 @@ uint conv(const char* str, int size)
 
 __m256i conv_1(const char* str, int size)
 {
-	__m128i v8 = _mm_loadu_epi8(str - 8 + size);
-	v8 = _mm_sub_epi8(v8, _mm_set1_epi8('0'));
-	//v8 = _mm_and_si128(v8, _mm_loadu_epi8(s_mask + 6 + size));
-	//v8 = _mm_and_si128(v8, _mm_loadu_epi8(s_mask + 16 + 6));
-	v8 = _mm_and_si128(v8, _mm_load_si128((const __m128i*)s_masks[size-1]));
+	__assume(size >= 0 && size <= 8);
+	int sizeBits = size * 8;
 
-	return _mm256_cvtepi8_epi32(v8); // lower 16x 16 bit digits
+	ullong l = *(const ullong*)str;
+	l ^= 0x30303030'30303030;
+	l <<= 64 - sizeBits;
+
+	__m128i v8 = _mm_cvtsi64_si128(l);
+	return _mm256_cvtepu8_epi32(v8); // 8x 32 bit digits
 }
 
 uint conv_2(__m256i v)
@@ -64,6 +98,8 @@ int main()
 {
 	auto start = std::chrono::high_resolution_clock::now();
 
+	CV_SPAN_START(init, L"init");
+
 	HANDLE hFile = CreateFile(L"aoc_2022_day01_large_input.txt", GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return (std::cerr << "Can't open file `aoc_2022_day01_large_input.txt`\n"), 1;
@@ -76,13 +112,12 @@ int main()
 
 	const char* basePtr = (const char*)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
 
-	// create small shadow region where we can do misaligned reads starting before the data
-	char* shadow = new char[64];
-	std::copy_n(basePtr, 64 - 16, shadow + 16);
+	CV_SPAN_STOP(init);
+	CV_SPAN_START(work, "Work");
 
 	constexpr uint MaxThreads = 32;
 	static std::array<uint, 3> threadTotals[MaxThreads] = { };
-	int numThreads = std::min(std::thread::hardware_concurrency(), MaxThreads);
+	int numThreads = std::max(1u, std::min(std::thread::hardware_concurrency(), MaxThreads) - 2);
 	const ullong numRegs = (fileSize + RegSize - 1) / RegSize;
 
 	auto ThreadFunc = [&](const int threadIdx)
@@ -148,16 +183,8 @@ int main()
 				}
 				else if (!skipFirst)
 				{
-					if (threadIdx == 0 && lastpos < 16)
-					{
-						auto v = conv_1(shadow + 16 + lastpos, int(npos - lastpos));
-						subtotalv = _mm256_add_epi32(subtotalv, v);
-					}
-					else
-					{
-						auto v = conv_1(ptr + lastpos, int(npos - lastpos));
-						subtotalv = _mm256_add_epi32(subtotalv, v);
-					}
+					auto v = conv_1(ptr + lastpos, int(npos - lastpos));
+					subtotalv = _mm256_add_epi32(subtotalv, v);
 				}
 				lastpos = npos + 1;
 				mvmask &= mvmask - 1;
@@ -194,9 +221,10 @@ int main()
 	}
 
 	auto d = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
+	CV_SPAN_STOP(work);
+
 	std::cout << std::format("Time: {} us\n", d);
 
 	std::cout << std::format("Max: {}\n", grandTotals[0]);
 	std::cout << std::format("Top 3: {} ({}, {}, {})\n", grandTotals[0] + grandTotals[1] + grandTotals[2], grandTotals[0], grandTotals[1], grandTotals[2]);
-
 }
