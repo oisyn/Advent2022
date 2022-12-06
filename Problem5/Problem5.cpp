@@ -133,7 +133,7 @@ int main()
 	{
 		threads.emplace_back([&](int idx)
 		{
-			int total = endPtr - lineStart;
+			int total = int(endPtr - lineStart);
 			const char* start = lineStart + (total * idx / numThreads);
 			const char* end = lineStart + (total * (idx + 1) / numThreads);
 
