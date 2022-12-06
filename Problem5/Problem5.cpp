@@ -62,7 +62,7 @@ int main()
 	CV_SPAN_START(init, L"Init");
 	auto start = std::chrono::high_resolution_clock::now();
 
-	auto filename = L"aoc_2022_day05_large_input.txt";
+	auto filename = L"aoc_2022_day05_large_input-3.txt";
 	HANDLE hFile = CreateFile(filename, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return (std::wcerr << std::format(L"Can't open file `{}`\n", filename)), 1;
@@ -121,8 +121,8 @@ int main()
 
 	CV_SPAN_START(moves, L"Parse moves");
 	constexpr uint MaxThreads = 32;
-	static std::array<uint, 3> threadTotals[MaxThreads] = { };
-	int numThreads = std::max(1u, std::min(std::thread::hardware_concurrency(), MaxThreads) - 2);
+	int numThreads = std::max(1u, std::min(std::thread::hardware_concurrency() - 2, MaxThreads));
+	//numThreads = 2;
 
 	struct Move { int n, from, to; };
 	std::vector<Move> threadMoves[MaxThreads];
@@ -144,24 +144,43 @@ int main()
 			std::vector<Move> mymoves;
 			mymoves.reserve(1000);
 
+			const __m256i allSpaces = _mm256_set1_epi8(' ');
+			auto nextSpace = [=, mvmask = 0u](int skip = 0) mutable -> const char*
+			{
+				for(;; skip--)
+				{
+					while (!mvmask && start < end)
+					{
+						auto reg = _mm256_loadu_epi8(start);
+						reg = _mm256_cmpeq_epi8(reg, allSpaces);
+						mvmask = _mm256_movemask_epi8(reg);
+						start += RegSize;
+					}
+
+					if (!mvmask)
+						return end;
+
+					uint o = std::countr_zero(mvmask);
+					mvmask &= mvmask - 1;
+					if (!skip)
+						return std::min(start - RegSize + o, end);
+				}
+			};
+
+			start = nextSpace();
 			while (start < end)
 			{
 				// "move a from b to c\n"
 
-				auto line = start;
-				auto nl = std::find(line, endPtr, '\n');
-				start = nl + 1;
-
-				int len = int(nl - line);
-				if (len < 8)
-					continue;
-
-				auto a = line + 5;
-				auto a_end = std::find(a + 1, nl, ' ');
+				auto a = start + 1;
+				auto a_end = nextSpace();
 				auto b = a_end + 6;
-				auto b_end = std::find(b + 1, nl, ' ');
+				auto b_end = nextSpace(1);
 				auto c = b_end + 4;
-				auto c_end = std::find(c + 1, nl, ' ');
+				start = nextSpace(1);
+				auto c_end = (start < end) ? start - 5 : end;
+				if (c_end[-1] == '\n')
+					c_end--;
 
 				mymoves.emplace_back(conv(a, a_end), conv(b, b_end) - 1, conv(c, c_end) - 1);
 			}
@@ -252,5 +271,5 @@ int main()
 
 	auto d = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
 	std::cout << std::format("Time: {} us\n", d);
-	//std::cout << result.data() << std::endl;
+	std::cout << result.data() << std::endl;
 }
