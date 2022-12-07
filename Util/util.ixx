@@ -129,7 +129,7 @@ class Splitter
 {
 public:
 	Splitter() { }
-	Splitter(std::span<const char> data, char separator) : m_data(data), m_separator(separator) { m_buffer.reserve(BufferSize + 256); }
+	Splitter(std::span<const char> data, char separator) : m_data(data), m_separator(separator) { m_buffer.reserve(BufferSize + 258); }
 
 	std::optional<std::span<const char>> Next()
 	{
@@ -173,16 +173,18 @@ private:
 			return false;
 
 		m_bufferPos = 0;
-		m_buffer.clear();
+		m_buffer.resize(m_buffer.capacity());
+		auto* result = m_buffer.data();
+		auto* resultEnd = m_buffer.data() + BufferSize;
 
 		__m256i allS = _mm256_set1_epi8(m_separator);
 		constexpr int RegSize = sizeof(__m256i);
-		ullong last = m_dataPos;
+		ullong last = m_lastPos;
 		const char* ptr = m_data.data();
 		auto end = m_data.size();
 
 		ullong offset;
-		for (offset = m_dataPos; offset < end && m_buffer.size() < BufferSize; offset += RegSize)
+		for (offset = m_dataPos; offset < end && result < resultEnd; offset += RegSize)
 		{
 			__m256i c = _mm256_loadu_epi8(ptr + offset);
 			__m256i separators = _mm256_cmpeq_epi8(c, allS);
@@ -190,26 +192,25 @@ private:
 			while (mvmask)
 			{
 				ullong spos = std::countr_zero(mvmask) + offset;
-				m_buffer.emplace_back(m_data.data() + last, m_data.data() + spos);
+				*result++ = { ptr + last, spos - last };
 				last = spos + 1;
 				mvmask &= mvmask - 1;
 			}
 		}
 
 		if (offset >= end && last < end)
-		{
-			m_buffer.emplace_back(ptr + last, ptr + end);
-			last = end;
-		}
+			*result++ = { ptr + last, end - last };
+		m_buffer.resize(result - m_buffer.data());
 
-		m_dataPos = last;
+		m_dataPos = offset;
+		m_lastPos = last;
 		return true;
 	}
 
 	static constexpr int BufferSize = 1024;
 	std::span<const char> m_data;
 	char m_separator;
-	ullong m_dataPos = 0;
+	ullong m_dataPos = 0, m_lastPos = 0;
 	std::vector<std::span<const char>> m_buffer;
 	int m_bufferPos = 0;
 };
