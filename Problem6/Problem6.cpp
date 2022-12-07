@@ -6,8 +6,8 @@ using namespace util;
 template<uint WindowSize>
 uint GetStart(std::span<const char> data)
 {
-	uint lastSeen[26] = { };
-	uint* lastSeenO = lastSeen - (int)'a';
+	uint noLongerInWindow[26] = { };
+	uint* noLongerInWindowO = noLongerInWindow - (int)'a';
 	uint nextOk = WindowSize;
 	uint size = uint(data.size());
 	for (uint i = 0; i < size; i++)
@@ -15,7 +15,7 @@ uint GetStart(std::span<const char> data)
 		if (i == nextOk)
 			return i;
 		char c = data[i];
-		nextOk = std::max(nextOk, std::exchange(lastSeenO[c], i) + WindowSize + 1);
+		nextOk = std::max(nextOk, std::exchange(noLongerInWindowO[c], i + WindowSize + 1));
 	}
 
 	return ~0u; // bad input!
@@ -23,11 +23,11 @@ uint GetStart(std::span<const char> data)
 
 int main()
 {
-	auto start = std::chrono::high_resolution_clock::now();
+	Timer timer(AutoStart);
 
-	auto filename = L"aoc22d6xxl.txt";
+	auto filename = L"input.txt";
 	MemoryMappedFile mmap(filename);
-	if (!mmap.IsOpen())
+	if (!mmap)
 		return (std::wcerr << std::format(L"Can't open {}\n", filename)), 1;
 
 	auto fileSize = mmap.GetSize();
@@ -58,8 +58,8 @@ int main()
 		}
 	}
 
-	auto d = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count();
-	std::cout << std::format("Time: {} us\n", d);
+	timer.Stop();
+	std::cout << std::format("Time: {} us\n", timer.GetTime());
 	std::cout << result << std::endl;
 	std::cout << std::string_view{ basePtr + result - 14, basePtr + result } << "\n";
 }

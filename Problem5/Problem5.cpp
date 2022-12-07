@@ -6,8 +6,11 @@ using namespace Concurrency::diagnostic;
 
 marker_series g_markerSeries(L"Problem1");
 
+#define _CONCAT2(a,b) a##b
+#define _CONCAT(a,b) _CONCAT2(a,b)
+
 #define CV_MARKER(x) g_markerSeries.write_flag(x)
-#define CV_SCOPED_SPAN(x) span myspan ## __COUNTER__(g_markerSeries, x)
+#define CV_SCOPED_SPAN(x) span _CONCAT(myspan, __COUNTER__)(g_markerSeries, x)
 
 union delayed_span
 {
@@ -19,6 +22,9 @@ union delayed_span
 
 #define CV_SPAN_START(name, x) delayed_span cvspan_ ## name(x)
 #define CV_SPAN_STOP(name) cvspan_ ## name.s.~span()
+
+#undef _CONCAT2
+#undef _CONCAT
 
 #else
 

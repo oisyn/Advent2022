@@ -27,16 +27,24 @@ MemoryMappedFile::MemoryMappedFile(const wchar_t* path)
 ////////////////////////////////////////////////////////////////////////////////////////////////
 MemoryMappedFile::MemoryMappedFile(MemoryMappedFile&& other)
 {
-	m_hFile = std::exchange(other.m_hFile, INVALID_HANDLE_VALUE);
-	m_hMap = std::exchange(other.m_hMap, INVALID_HANDLE_VALUE);
-	m_size = std::exchange(other.m_size, 0);
-	m_pData = std::exchange(other.m_pData, nullptr);
+	*this = std::move(other);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 MemoryMappedFile::~MemoryMappedFile()
 {
 	Close();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+MemoryMappedFile& MemoryMappedFile::operator=(MemoryMappedFile&& other)
+{
+	Close();
+	m_hFile = std::exchange(other.m_hFile, INVALID_HANDLE_VALUE);
+	m_hMap = std::exchange(other.m_hMap, INVALID_HANDLE_VALUE);
+	m_size = std::exchange(other.m_size, 0);
+	m_pData = std::exchange(other.m_pData, nullptr);
+	return *this;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
