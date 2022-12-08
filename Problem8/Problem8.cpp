@@ -15,41 +15,48 @@ int findchar(const char* ptr, char c)
 	}
 }
 
-template<class C>
-void Process(const char* data, long long* treeScore, int majorMax, int majorStride, int minorMin, int minorMax, int minorStride)
+std::pair<long long, bool> GetScoreAndVisibility(const char* data, int x, int y, int width, int height, int stride)
 {
-	int nmajor = majorMax / majorStride;
-	auto algo = [=](int threadIdx, int numThreads)
-	{
-		int from = threadIdx * nmajor / numThreads;
-		int to = (threadIdx + 1) * nmajor / numThreads;
-		from *= majorStride;
-		to *= majorStride;
+	int offset = y * stride + x;
+	int h = data[offset];
 
-		C comparator;
-		for (int major = from; major < to; major += majorStride)
-		{
-			int treeDists[10] = { };
-			for (int minor = minorMin, d = 0; comparator(minor, minorMax); minor += minorStride, d++)
-			{
-				int offset = major + minor;
-				int height = data[offset] - '0';
-				int distance = d - treeDists[height];
-				treeScore[offset] *= distance;
-				std::fill_n(treeDists, height + 1, d);
-			}
-		}
-	};
+	long long l = 1;
+	bool visible = false;
+	int dx, dy, o;
 
-	if (nmajor < 200)
-		algo(0, 1);
-	else
-	{
-		auto futures = DoParallel(algo);
-		for (auto& f : futures)
-			f.wait();
-	}
+	dx = x + 1;
+	o = offset + 1;
+	while (dx < width && data[o] < h)
+		dx++, o++;
+	if (dx >= width)
+		dx--, visible = true;
+	l *= dx - x;
 
+	dx = x - 1;
+	o = offset - 1;
+	while (dx >= 0 && data[o] < h)
+		dx--, o--;
+	if (dx < 0)
+		dx = 0, visible = true;
+	l *= x - dx;
+
+	dy = y + 1;
+	o = offset + stride;
+	while (dy < height  && data[o] < h)
+		dy++, o += stride;
+	if (dy >= height)
+		dy--, visible = true;
+	l *= dy - y;
+
+	dy = y - 1;
+	o = offset - stride;
+	while (dy >= 0 && data[o] < h)
+		dy--, o -= stride;
+	if (dy < 0)
+		dy = 0, visible = true;
+	l *= y - dy;
+
+	return { l, visible };
 }
 
 bool run(const wchar_t* file)
@@ -64,90 +71,45 @@ bool run(const wchar_t* file)
 	int width = findchar(data.data(), '\n');
 	int stride = width + 1;
 	int height = int(mmap.GetSize() + 1) / stride;
+
 	load.Stop();
 
-	Timer part1(AutoStart);
-	std::vector<bool> bits(stride * height);
+	std::atomic<int> nextOffset = 0;
+	auto futures = DoParallel([=, &nextOffset](int threadIdx, int numThreads) -> std::pair<long long, int>
+	{
+		long long myMax = 0;
+		int numVisible = 0;
+		constexpr int WorkloadSize = 32;
 
+		for (;;)
+		{
+			int myoffsets = (nextOffset += WorkloadSize) - WorkloadSize;
+			for (int i = 0; i < WorkloadSize; i++)
+			{
+				int o = myoffsets + i;
+				if (o >= width * height)
+					return { myMax, numVisible };
+
+				int y = o / width;
+				int x = o % width;
+				auto [s, v] = GetScoreAndVisibility(data.data(), x, y, width, height, stride);
+				myMax = std::max(myMax, s);
+				numVisible += v;
+			}
+		}
+	});
+
+	long long maxScore = 0;
 	int numTrees = 0;
-	for (int y = 0; y < height; y++)
+	for (auto& f : futures)
 	{
-		int max = 0;
-		int offset = y * stride;
-		for (int x = 0; x < width; x++, offset++)
-		{
-			if (data[offset] > max)
-			{
-				if (!bits[offset])
-					numTrees++;
-				bits[offset] = 1;
-				max = data[offset];
-			}
-		}
-		int maxHeight = max;
-		max = 0;
-		offset--;
-		for (int x = width - 1; x >= 0; x--, offset--)
-		{
-			char c = data[offset];
-			if (c > max)
-			{
-				if (!bits[offset])
-					numTrees++;
-				bits[offset] = 1;
-				max = data[offset];
-			}
-			if (c >= maxHeight)
-				break;
-		}
+		auto [s, n] = f.get();
+		maxScore = std::max(maxScore, s);
+		numTrees += n;
 	}
-
-	for (int x = 0; x < width; x++)
-	{
-		int max = 0;
-		int offset = x;
-		for (int y = 0; y < height; y++, offset += stride)
-		{
-			if (data[offset] > max)
-			{
-				if (!bits[offset])
-					numTrees++;
-				bits[offset] = 1;
-				max = data[offset];
-			}
-		}
-		int maxHeight = max;
-		max = 0;
-		offset -= stride;
-		for (int y = height - 1; y >= 0; y--, offset -= stride)
-		{
-			char c = data[offset];
-
-			if (c > max)
-			{
-				if (!bits[offset])
-					numTrees++;
-				bits[offset] = 1;
-				max = data[offset]; 
-			}
-			if (c >= maxHeight)
-				break;
-		}
-	}
-	part1.Stop();
-
-
-	Timer part2(AutoStart);
-	std::vector<long long> treeScore(height * stride, 1);
-	Process<std::less<>>(data.data(), treeScore.data(), height * stride, stride, 0, width, 1);				   // left
-	Process<std::greater_equal<>>(data.data(), treeScore.data(), height * stride, stride, width - 1, 0, -1);   // right
-	Process<std::less<>>(data.data(), treeScore.data(), width, 1, 0, height * stride, stride);				   // up
-	Process<std::greater_equal<>>(data.data(), treeScore.data(), width, 1, (height - 1) * stride, 0, -stride); // down
-	auto maxScore = std::ranges::max(treeScore);
- 	part2.Stop();
 
 	total.Stop();
-	std::cout << std::format("Time: {}us (load:{}us, part1:{}us, part2:{}us)\n{}\n{}\n", total.GetTime(), load.GetTime(), part1.GetTime(), part2.GetTime(), numTrees, maxScore);
+	std::cout << std::format("Time: {}us (load:{}us)\n{}\n{}\n", total.GetTime(), load.GetTime(), numTrees, maxScore);
 
 	return true;
 }

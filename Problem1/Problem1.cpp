@@ -100,9 +100,10 @@ int main()
 
 	CV_SPAN_START(init, L"init");
 
-	HANDLE hFile = CreateFile(L"aoc_2022_day01_large_input.txt", GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+	const wchar_t* file = L"input.txt"; // L"aoc_2022_day01_large_input.txt";
+	HANDLE hFile = CreateFile(file, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE)
-		return (std::cerr << "Can't open file `aoc_2022_day01_large_input.txt`\n"), 1;
+		return (std::wcerr << "Can't open file `" << file << "`\n"), 1;
 	ullong fileSize = 0;
 	GetFileSizeEx(hFile, (LARGE_INTEGER*)&fileSize);
 
