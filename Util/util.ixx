@@ -41,7 +41,7 @@ public:
 	explicit operator bool() const { return IsOpen(); }
 
 	template<class T>
-	std::span<T> GetSpan() const { return std::span<T>((T*)m_pData, (T*)(const char*)m_pData + m_size); }
+	std::span<T> GetSpan() const { return std::span<T>((T*)m_pData, (T*)m_pData + (m_size + sizeof(T) - 1) / sizeof(T)); }
 
 private:
 	HANDLE m_hFile = INVALID_HANDLE_VALUE;
@@ -63,6 +63,14 @@ template<class F> auto DoParallel(F&& func)
 	for (int i = 0; i < numThreads; i++)
 		results.push_back(std::async(std::launch::async, std::forward<F>(func), i, numThreads));
 
+	return results;
+}
+
+template<class F> auto DontParallel(F&& func)
+{
+	using result_t = std::invoke_result_t<std::decay_t<F>, int, int>;
+	std::vector<std::future<result_t>> results;
+	results.push_back(std::async(std::launch::deferred, std::forward<F>(func), 0, 1));
 	return results;
 }
 
