@@ -79,7 +79,8 @@ bool run(const wchar_t* file)
 	{
 		long long myMax = 0;
 		int numVisible = 0;
-		constexpr int WorkloadSize = 32;
+		constexpr int WorkloadSize = 512;
+		const int maxOffset = (width - 2) * (height - 2);
 
 		for (;;)
 		{
@@ -87,11 +88,11 @@ bool run(const wchar_t* file)
 			for (int i = 0; i < WorkloadSize; i++)
 			{
 				int o = myoffsets + i;
-				if (o >= width * height)
+				if (o >= maxOffset)
 					return { myMax, numVisible };
 
-				int y = o / width;
-				int x = o % width;
+				int y = o / (width - 2) + 1;
+				int x = o % (width - 2) + 1;
 				auto [s, v] = GetScoreAndVisibility(data.data(), x, y, width, height, stride);
 				myMax = std::max(myMax, s);
 				numVisible += v;
@@ -100,7 +101,7 @@ bool run(const wchar_t* file)
 	});
 
 	long long maxScore = 0;
-	int numTrees = 0;
+	int numTrees = 2 * (width + height) - 4;
 	for (auto& f : futures)
 	{
 		auto [s, n] = f.get();
@@ -126,10 +127,14 @@ int main()
 		L"input-mrhaas.txt",
 	};
 
+	constexpr int NumRuns = 1;
 	for (auto f : inputs)
 	{
 		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
-		if (!run(f))
-			std::wcerr << std::format(L"Can't open `{}`\n", f);
+		for (int i = 0; i < NumRuns; i++)
+		{
+			if (!run(f))
+				std::wcerr << std::format(L"Can't open `{}`\n", f);
+		}
 	}
 }

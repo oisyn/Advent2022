@@ -50,12 +50,12 @@ MemoryMappedFile& MemoryMappedFile::operator=(MemoryMappedFile&& other)
 ////////////////////////////////////////////////////////////////////////////////////////////////
 bool MemoryMappedFile::Open(const wchar_t* path)
 {
-	HANDLE m_hFile = CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+	m_hFile = CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (m_hFile == INVALID_HANDLE_VALUE)
 		return false;
 	GetFileSizeEx(m_hFile, (LARGE_INTEGER*)&m_size);
 
-	HANDLE m_hMap = CreateFileMapping(m_hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+	m_hMap = CreateFileMapping(m_hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
 	if (m_hMap == INVALID_HANDLE_VALUE)
 		return false;
 
