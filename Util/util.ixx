@@ -86,6 +86,8 @@ public:
 	Timer(AutoStart_t) { Start(); }
 	void Start() { m_t -= std::chrono::high_resolution_clock::now().time_since_epoch(); }
 	void Stop() { m_t += std::chrono::high_resolution_clock::now().time_since_epoch(); }
+	void Reset() { m_t = { }; }
+	void Restart() { m_t = -std::chrono::high_resolution_clock::now().time_since_epoch(); }
 
 	template<class D = std::chrono::microseconds>
 	long long GetTime() const { return std::chrono::duration_cast<D>(m_t).count(); }

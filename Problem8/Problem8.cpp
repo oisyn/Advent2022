@@ -59,10 +59,76 @@ std::pair<long long, bool> GetScoreAndVisibility(const char* data, int x, int y,
 	return { l, visible };
 }
 
-bool run(const wchar_t* file)
+void CheckTranspose(const char* out, const char* in, int width, int height)
+{
+	int istride = width + 1;
+	int ostride = (height + 31) & ~31;
+
+	for (int y = 0, io = 0, oo = 0; y < height; y++, io++, oo++)
+	{
+		for (int x = 0, oo2 = oo; x < width; x++, io++, oo2 += ostride)
+			if (out[oo2] != in[io])
+				__debugbreak();
+	}
+}
+
+void Transpose1(char* out, const char* in, int width, int height)
+{
+	int istride = width + 1;
+	int ostride = (height + 31) & ~31;
+
+	for (int y = 0, io = 0, oo = 0; y < height; y++, io++, oo++)
+	{
+		for (int x = 0, oo2 = oo; x < width; x++, io++, oo2 += ostride)
+			out[oo2] = in[io];
+	}
+}
+
+void Transpose2(char* out, const char* in, int width, int height)
+{
+	int istride = width + 1;
+	int ostride = (height + 31) & ~31;
+	auto offsets = _mm256_mullo_epi32(_mm256_set1_epi32(istride), _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+	auto shuffle1 = _mm256_setr_epi8(
+		0x00, 0x01, 0x04, 0x05, 0x08, 0x09, 0x0c, 0x0d, 0x02, 0x03, 0x06, 0x07, 0x0a, 0x0b, 0x0e, 0x0f,
+		0x00, 0x01, 0x04, 0x05, 0x08, 0x09, 0x0c, 0x0d, 0x02, 0x03, 0x06, 0x07, 0x0a, 0x0b, 0x0e, 0x0f);
+	auto shuffle3 = _mm256_setr_epi8(
+		0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c, 0x0e,
+		0x01, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x0d, 0x0f,
+		0x00, 0x02, 0x04, 0x06, 0x08, 0x0a, 0x0c, 0x0e,
+		0x01, 0x03, 0x05, 0x07, 0x09, 0x0b, 0x0d, 0x0f);
+	static uint mask[16] = { 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0xffff'ffff, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+	height &= ~7;
+	width &= ~3;
+
+	for (int y = 0; y < height; y += 8)
+	{
+		auto loadmask = _mm256_loadu_epi32(mask + 8 - std::min(height - y, 8));
+
+		for (int x = 0; x < width; x += 4)
+		{
+			auto inptr = in + (y * istride + x);
+			//auto data = _mm256_i32gather_epi32((const int*)inptr, offsets, 1);
+			auto data = _mm256_mask_i32gather_epi32(_mm256_undefined_si256(), (const int*)inptr, offsets, loadmask, 1);
+			auto s = _mm256_shuffle_epi8(data, shuffle1);
+			s = _mm256_permute4x64_epi64(s, _MM_PERM_DBCA);
+			s = _mm256_shuffle_epi8(s, shuffle3);
+
+			auto outptr = out + (x * ostride + y);
+			*(long long*)(outptr) = _mm256_extract_epi64(s, 0);
+			*(long long*)(outptr + ostride) = _mm256_extract_epi64(s, 1);
+			auto shi = _mm256_extracti128_si256(s, 1);	// let's do this manually, as _mm256_extract_epi64() generates this instruction on every call
+			*(long long*)(outptr + ostride * 2) = _mm_extract_epi64(shi, 0);
+			*(long long*)(outptr + ostride * 3) = _mm_extract_epi64(shi, 1);
+		}
+	}
+}
+
+bool Run(const wchar_t* file)
 {
 	Timer total(AutoStart);
-	Timer load(AutoStart);
+	Timer tload(AutoStart);
 	MemoryMappedFile mmap(file);
 	if (!mmap)
 		return false;
@@ -72,8 +138,16 @@ bool run(const wchar_t* file)
 	int stride = width + 1;
 	int height = int(mmap.GetSize() + 1) / stride;
 
-	load.Stop();
+	int awidth = (width + 3) & ~3;
+	int aheight = (height + 31) & ~31;
+	tload.Stop();
 
+	Timer ttrans(AutoStart);
+	std::vector<char> transposed(awidth * aheight);
+	Transpose2(transposed.data(), data.data(), width, height);
+	ttrans.Stop();
+
+	Timer talgo(AutoStart);
 	std::atomic<int> nextOffset = 0;
 	auto futures = DoParallel([=, &nextOffset](int threadIdx, int numThreads) -> std::pair<long long, int>
 	{
@@ -84,7 +158,7 @@ bool run(const wchar_t* file)
 
 		for (;;)
 		{
-			int myoffsets = (nextOffset += WorkloadSize) - WorkloadSize;
+			int myoffsets = nextOffset.fetch_add(WorkloadSize);
 			for (int i = 0; i < WorkloadSize; i++)
 			{
 				int o = myoffsets + i;
@@ -108,9 +182,10 @@ bool run(const wchar_t* file)
 		maxScore = std::max(maxScore, s);
 		numTrees += n;
 	}
+	talgo.Stop();
 
 	total.Stop();
-	std::cout << std::format("Time: {}us (load:{}us)\n{}\n{}\n", total.GetTime(), load.GetTime(), numTrees, maxScore);
+	std::cout << std::format("Time: {}us (load:{}us, transpose:{}us, algo:{}us)\n{}\n{}\n", total.GetTime(), tload.GetTime(), ttrans.GetTime(), talgo.GetTime(), numTrees, maxScore);
 
 	return true;
 }
@@ -121,9 +196,9 @@ int main()
 	const wchar_t* inputs[] =
 	{
 		//L"example.txt",
-		L"input.txt",
-		L"aoc_2022_day08_rect.txt",
-		L"aoc_2022_day08_sparse.txt",
+		//L"input.txt",
+		//L"aoc_2022_day08_rect.txt",
+		//L"aoc_2022_day08_sparse.txt",
 		L"input-mrhaas.txt",
 	};
 
@@ -133,7 +208,7 @@ int main()
 		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
 		for (int i = 0; i < NumRuns; i++)
 		{
-			if (!run(f))
+			if (!Run(f))
 				std::wcerr << std::format(L"Can't open `{}`\n", f);
 		}
 	}

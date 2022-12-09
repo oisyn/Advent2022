@@ -7,5 +7,6 @@
 *.idb
 **/x64/*
 **/Debug/*
+JSON/*
 .vs/*
 *.txt
