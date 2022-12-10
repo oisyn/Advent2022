@@ -86,18 +86,7 @@ constexpr auto GenerateStates()
 }
 constexpr std::array<std::array<Move, 9>, 9> States = GenerateStates();
 
-namespace std
-{
-	template<class T>
-	struct std::hash<std::pair<T, T>>
-	{
-		size_t operator()(const std::pair<T, T>& p) const
-		{
-			std::hash<T> hasher;
-			return hasher(p.first) ^ hasher(p.second);
-		}
-	};
-}
+
 
 
 constexpr uint BitsPerLevel = 16;
@@ -114,7 +103,7 @@ struct BitPage<0>
 	static constexpr ullong NumWords = (1ll << BitsPerLevel) / WordSize;
 	static constexpr ullong LevelMask = NumWords - 1;
 
-	bool Set(ullong b)
+	auto Set(ullong b)
 	{
 		ullong idx = (b >> WordShift) & LevelMask;
 		ullong m = 1ull << (b & WordSize - 1);
@@ -124,7 +113,13 @@ struct BitPage<0>
 		return !(old & m);
 	}
 
-	std::array<ullong, NumWords> words{};
+	auto Set(ullong b, BitPage<0>*& pageCache)
+	{
+		pageCache = this;
+		return Set(b);
+	}
+
+	alignas(64) std::array<ullong, NumWords> words{};
 };
 
 template<uint Level>
@@ -136,12 +131,12 @@ struct BitPage
 	static constexpr ullong LevelShift = Level * BitsPerLevel;
 	static constexpr ullong LevelMask = ElemsPerPage - 1;
 
-	bool Set(ullong b)
+	auto Set(ullong b, BitPage<0>*& pageCache)
 	{
 		ullong idx = (b >> LevelShift) & LevelMask;
 		if (!pages[idx])
 			pages[idx] = std::make_unique<PageType>();
-		return pages[idx]->Set(b);
+		return pages[idx]->Set(b, pageCache);
 	}
 
 	std::array<PagePtr, ElemsPerPage> pages;
@@ -150,15 +145,25 @@ struct BitPage
 class BitGrid
 {
 public:
+	static constexpr ullong CacheBits = 4;
+	static constexpr ullong CacheMask = ~((1 << BitsPerLevel) - 1);
+
+	BitGrid()
+	{
+		std::ranges::fill(m_pageCache, std::pair{ 1ull, nullptr });
+	}
+
 	bool Set(int x, int y)
 	{
-		if (!m_topPage)
-			m_topPage = std::make_unique<BitPage<MaxLevel>>();
+		// interleave bits of x and y
+		ullong b = _pdep_u64(uint(x), 0x5555'5555'5555'5555ull) | _pdep_u64(uint(y), 0xaaaa'aaaa'aaaa'aaaaull);
 
-		auto v = _mm_setr_epi32(x, y, 0, 0);
-		v = _mm_shuffle_epi8(v, _mm_setr_epi8(0, 4, 1, 5, 2, 6, 3, 7, 8, 8, 8, 8, 8, 8, 8, 8));
-		ullong b = _mm_extract_epi64(v, 0);
-		return m_topPage->Set(b);
+		int cacheIdx = (b >> BitsPerLevel) & ((1 << CacheBits) - 1);
+		if (m_pageCache[cacheIdx].first == (b & CacheMask))
+			return m_pageCache[cacheIdx].second->Set(b);
+
+		m_pageCache[cacheIdx].first = b & CacheMask;
+		return m_topPage->Set(b, m_pageCache[cacheIdx].second);
 	}
 
 	void Clear()
@@ -167,7 +172,8 @@ public:
 	}
 
 private:
-	std::unique_ptr<BitPage<MaxLevel>> m_topPage;
+	std::unique_ptr<BitPage<MaxLevel>> m_topPage = std::make_unique<BitPage<MaxLevel>>();
+	std::pair<ullong, BitPage<0>*> m_pageCache[1 << CacheBits];
 };
 
 
