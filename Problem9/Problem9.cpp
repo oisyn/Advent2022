@@ -188,7 +188,6 @@ bool Run(const wchar_t* file)
 
 	Timer tsimulate(AutoStart);
 	std::vector<ullong> coords;
-	//std::vector<std::pair<int, int>> coords;
 	constexpr int NumKnots = 9;
 	int x = 0, y = 0;
 	int knotStates[NumKnots] = { };
@@ -196,7 +195,8 @@ bool Run(const wchar_t* file)
 	//int minx = 0, miny = 0, maxx = 0, maxy = 0;
 
 	BitGrid grid;
-	int numCells = 0;
+	int numCells = 1;
+	grid.Set(0, 0);
 
 	while (ptr < end)
 	{
@@ -211,36 +211,32 @@ bool Run(const wchar_t* file)
 		{
 			int d = dir;
 			Move lastMove;
-			for (int k = 0; k < NumKnots; k++)
+			for (int k = 0; k < NumKnots /*&& d != None*/; k++)
 			{
 				auto& state = knotStates[k];
 				lastMove = States[state][d];
 				state = lastMove.nextState;
 				d = lastMove.moveDir;
 			}
-			x += lastMove.dx;
-			y += lastMove.dy;
+
+			if (d != None)
+			{
+				x += lastMove.dx;
+				y += lastMove.dy;
+				numCells += grid.Set(x, y);
+			}
+
 			//minx = std::min(minx, x);
 			//miny = std::min(miny, y);
 			//maxx = std::max(maxx, x);
 			//maxy = std::max(maxy, y);
 			//std::cout << std::format("({}, {})\n", x, y);
-
-			//coords.emplace_back((ullong(y) << 32) | (uint)x);
-			//coords.emplace_back(x, y);
-			
-			numCells += grid.Set(x, y);
 		}
 	}
 	tsimulate.Stop();
 
-	Timer tsort(AutoStart);
-	//std::ranges::sort(coords);
-	//auto numCells = std::ranges::unique(coords).begin() - coords.begin();
-	tsort.Stop();
-
 	total.Stop();
-	std::cout << std::format(std::locale(""), "Time: {:L}us (load:{}us, sim:{:L}us, sort:{:L}us)\n{}\n", total.GetTime(), tload.GetTime(), tsimulate.GetTime(), tsort.GetTime(), numCells);
+	std::cout << std::format(std::locale(""), "Time: {:L}us (load:{}us, sim:{:L}us)\n{}\n", total.GetTime(), tload.GetTime(), tsimulate.GetTime(), numCells);
 	//std::cout << std::format("({}, {}) - ({}, {})\n", minx, miny, maxx, maxy);
 
 	return true;
