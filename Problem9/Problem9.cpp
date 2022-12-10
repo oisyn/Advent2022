@@ -152,33 +152,22 @@ class BitGrid
 public:
 	bool Set(int x, int y)
 	{
-		if (!quadrants)
-			quadrants.reset(new BitPage<MaxLevel>[4]);
+		if (!m_topPage)
+			m_topPage = std::make_unique<BitPage<MaxLevel>>();
 
-		int q = 0;
-		if (x < 0)
-		{
-			q = 1;
-			x = -x;
-		}
-		if (y < 0)
-		{
-			q += 2;
-			y = -y;
-		}
 		auto v = _mm_setr_epi32(x, y, 0, 0);
 		v = _mm_shuffle_epi8(v, _mm_setr_epi8(0, 4, 1, 5, 2, 6, 3, 7, 8, 8, 8, 8, 8, 8, 8, 8));
 		ullong b = _mm_extract_epi64(v, 0);
-		return quadrants[q].Set(b);
+		return m_topPage->Set(b);
 	}
 
 	void Clear()
 	{
-		quadrants.reset();
+		m_topPage.reset();
 	}
 
 private:
-	std::unique_ptr<BitPage<MaxLevel>[]> quadrants;
+	std::unique_ptr<BitPage<MaxLevel>> m_topPage;
 };
 
 
