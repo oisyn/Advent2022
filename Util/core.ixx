@@ -16,3 +16,5 @@ export import <future>;
 export import <variant>;
 export import <unordered_set>;
 export import <unordered_map>;
+export import <tuple>;
+export import <cmath>;
