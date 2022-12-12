@@ -19,9 +19,9 @@ MemoryMappedFile::MemoryMappedFile()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-MemoryMappedFile::MemoryMappedFile(const wchar_t* path)
+MemoryMappedFile::MemoryMappedFile(const wchar_t* path, bool copyOnWrite)
 {
-	Open(path);
+	Open(path, copyOnWrite);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -48,18 +48,18 @@ MemoryMappedFile& MemoryMappedFile::operator=(MemoryMappedFile&& other)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-bool MemoryMappedFile::Open(const wchar_t* path)
+bool MemoryMappedFile::Open(const wchar_t* path, bool copyOnWrite)
 {
 	m_hFile = CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (m_hFile == INVALID_HANDLE_VALUE)
 		return false;
 	GetFileSizeEx(m_hFile, (LARGE_INTEGER*)&m_size);
 
-	m_hMap = CreateFileMapping(m_hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+	m_hMap = CreateFileMapping(m_hFile, nullptr, copyOnWrite ? PAGE_WRITECOPY : PAGE_READONLY, 0, 0, nullptr);
 	if (m_hMap == INVALID_HANDLE_VALUE)
 		return false;
 
-	m_pData = MapViewOfFile(m_hMap, FILE_MAP_READ, 0, 0, 0);
+	m_pData = MapViewOfFile(m_hMap, copyOnWrite ? FILE_MAP_COPY : FILE_MAP_READ, 0, 0, 0);
 	return (bool)m_pData;
 }
 

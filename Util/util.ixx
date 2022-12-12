@@ -28,13 +28,13 @@ class MemoryMappedFile
 {
 public:
 	MemoryMappedFile();
-	MemoryMappedFile(const wchar_t* path);
+	MemoryMappedFile(const wchar_t* path, bool copyOnWrite = false);
 	MemoryMappedFile(MemoryMappedFile&& other);
 	~MemoryMappedFile();
 
 	MemoryMappedFile& operator=(MemoryMappedFile&& other);
 
-	bool Open(const wchar_t* path);
+	bool Open(const wchar_t* path, bool copyOnWrite = false);
 	void Close();
 	bool IsOpen() const { return m_pData != nullptr; }
 	ullong GetSize() const { return m_size; }
@@ -47,7 +47,7 @@ private:
 	HANDLE m_hFile = INVALID_HANDLE_VALUE;
 	HANDLE m_hMap = INVALID_HANDLE_VALUE;
 	ullong m_size = 0;
-	const void* m_pData = nullptr;
+	void* m_pData = nullptr;
 };
 
 
