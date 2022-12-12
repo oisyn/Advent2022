@@ -20,7 +20,7 @@ int FindChar(const char* ptr, char c)
 int MinPath(int fromX, int fromY, int fromHeight, int toX, int toY, int toHeight)
 {
 	// disabled because it's slower
-	return 0; // std::abs(fromX - fromY) + std::abs(fromX - toX) + std::max(toHeight - fromHeight, 0);
+	return std::max(std::abs(toX - fromX) + std::abs(toY - fromY), toHeight - fromHeight);
 }
 
 bool Run(const wchar_t* file)
@@ -62,34 +62,57 @@ bool Run(const wchar_t* file)
 		{
 			int minPath;
 			int offset;
-			int x, y;
+			//int x, y;
+
+			Node(int path, int minPath, int offset, int x, int y) : minPath(minPath + path), offset(offset)/*, x(x), y(y)*/ { }
 		};
 		using NodeGreater = decltype([](auto& a, auto& b) { return a.minPath > b.minPath; });
 		std::priority_queue<Node, std::vector<Node>, NodeGreater> queue;
 
 		if (part == 0)
-			queue.emplace(MinPath(startX, startY, 'a', endX, endY, 'z'), startPos, startX, startY);
+			queue.emplace(0, MinPath(startX, startY, 'a', endX, endY, 'z'), startPos, startX, startY);
 		else
 		{
 			std::ranges::fill(leastPath, std::numeric_limits<int>::max());
 			for (int y = 0, o = 0; y < height; y++, o++)
 				for (int x = 0; x < width; x++, o++)
 					if (ptr[o] == 'a')
-						leastPath[o] = 0, queue.emplace(MinPath(x, y, 'a', endX, endY, 'z'), o, x, y);
+						leastPath[o] = 0, queue.emplace(0, MinPath(x, y, 'a', endX, endY, 'z'), o, x, y);
 		}
 
 		std::vector<char> field(stride * height + 1);
+		//int visited = 0;
+		//int maxSize = 0;
 
 		while (!queue.empty())
 		{
+			//visited++;
+			maxSize = std::max<int>(maxSize, queue.size());
+			auto n = queue.top();
+
 		#if VIS
 			for (int i = 0; i < size; i++)
 				field[i] = (leastPath[i] < 0x7fffffff) ? '.' : ptr[i];
+			int offset = n.offset;
+			while (offset != startPos)
+			{
+				int s = leastPath[offset];
+				if (offset > 0 && leastPath[offset - 1] == s - 1)
+					offset--;
+				else if (offset + 1 < size && leastPath[offset + 1] == s - 1)
+					offset++;
+				else if (offset >= stride && leastPath[offset - stride] == s - 1)
+					offset -= stride;
+				else if (offset + stride < size && leastPath[offset + stride] == s - 1)
+					offset += stride;
+				else
+					__debugbreak();
+				field[offset] = '#';
+			}
 			std::cout << "\x1b[0;0H" << field.data();
-			std::this_thread::sleep_for(std::chrono::milliseconds(16));
+			//std::this_thread::sleep_for(std::chrono::milliseconds(16));
 		#endif
 
-			auto n = queue.top();
 			queue.pop();
 			if (n.offset == endPos)
 			{
@@ -97,27 +120,30 @@ bool Run(const wchar_t* file)
 				break;
 			}
 
+			int nx = n.offset % stride;
+			int ny = n.offset / stride;
+
 			int h = data[n.offset];
 			int p = leastPath[n.offset] + 1;
-			if (n.x > 0 && leastPath[n.offset - 1] > p && data[n.offset - 1] <= h + 1)
+			if (nx > 0 && leastPath[n.offset - 1] > p && data[n.offset - 1] <= h + 1)
 			{
 				leastPath[n.offset - 1] = p;
-				queue.emplace(p + MinPath(n.x, n.y, h, n.x - 1, n.y, data[n.offset - 1]), n.offset - 1, n.x - 1, n.y);
+				queue.emplace(p, MinPath(nx - 1, ny, data[n.offset - 1], endX, endY, 'z'), n.offset - 1, nx - 1, ny);
 			}
-			if (n.x + 1 < width && leastPath[n.offset + 1] > p && data[n.offset + 1] <= h + 1)
+			if (nx + 1 < width && leastPath[n.offset + 1] > p && data[n.offset + 1] <= h + 1)
 			{
 				leastPath[n.offset + 1] = p;
-				queue.emplace(p + MinPath(n.x, n.y, h, n.x + 1, n.y, data[n.offset + 1]), n.offset + 1, n.x + 1, n.y);
+				queue.emplace(p, MinPath(nx + 1, ny, data[n.offset + 1], endX, endY, 'z'), n.offset + 1, nx + 1, ny);
 			}
-			if (n.y > 0 && leastPath[n.offset - stride] > p && data[n.offset - stride] <= h + 1)
+			if (ny > 0 && leastPath[n.offset - stride] > p && data[n.offset - stride] <= h + 1)
 			{
 				leastPath[n.offset - stride] = p;
-				queue.emplace(p + MinPath(n.x, n.y, h, n.x, n.y - 1, data[n.offset - stride]), n.offset - stride, n.x, n.y - 1);
+				queue.emplace(p, MinPath(nx, ny - 1, data[n.offset - stride], endX, endY, 'z'), n.offset - stride, nx, ny - 1);
 			}
-			if (n.y + 1 < height && leastPath[n.offset + stride] > p && data[n.offset + stride] <= h + 1)
+			if (ny + 1 < height && leastPath[n.offset + stride] > p && data[n.offset + stride] <= h + 1)
 			{
 				leastPath[n.offset + stride] = p;
-				queue.emplace(p + MinPath(n.x, n.y, h, n.x, n.y + 1, data[n.offset + stride]), n.offset + stride, n.x, n.y + 1);
+				queue.emplace(p, MinPath(nx, ny + 1, data[n.offset + stride], endX, endY, 'z'), n.offset + stride, nx, ny + 1);
 			}
 		}
 
@@ -145,12 +171,15 @@ bool Run(const wchar_t* file)
 		}
 	#endif
 
+		//std::cout << "Visited: " << visited << std::endl;
+		//std::cout << "MaxSize: " << maxSize << std::endl;
+
 
 		talgo[part].Stop();
 	}
 
 	total.Stop();
-	std::cout << std::format(std::locale(""), "Time: {:L}us (load:{:L}us, part1:{:L}us, part2:{:L}us)\nPart 1: {}\nPart 2: {}\n", total.GetTime(), tload.GetTime(), talgo[0].GetTime(), talgo[1].GetTime(), result[0], result[1]);
+	std::cout << std::format(std::locale("en-US"), "Time: {:L}us (load:{:L}us, part1:{:L}us, part2:{:L}us)\nPart 1: {}\nPart 2: {}\n", total.GetTime(), tload.GetTime(), talgo[0].GetTime(), talgo[1].GetTime(), result[0], result[1]);
 
 	return true;
 }
@@ -161,10 +190,13 @@ int main()
 	const wchar_t* inputs[] =
 	{
 		//L"input.txt",
-		L"aoc_2022_day12_large-1.txt",
+		//L"aoc_2022_day12_large-1.txt",
+		L"aoc_2022_day12_large-2.txt",
+		//L"aoc_2022_day12_zigzag-small.txt",
+		//L"aoc_2022_day12_zigzag-large.txt",
 	};
 
-	constexpr int NumRuns = 10;
+	constexpr int NumRuns = 3;
 	for (auto f : inputs)
 	{
 		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
