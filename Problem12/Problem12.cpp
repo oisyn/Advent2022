@@ -87,7 +87,7 @@ bool Run(const wchar_t* file)
 		while (!queue.empty())
 		{
 			//visited++;
-			maxSize = std::max<int>(maxSize, queue.size());
+			//maxSize = std::max<int>(maxSize, queue.size());
 			auto n = queue.top();
 
 		#if VIS
