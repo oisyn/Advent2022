@@ -51,6 +51,8 @@ Token GetToken(const char*& _ptr)
 bool Smaller(const char* p1, const char* p2)
 {
 	int level = 1;
+	p1++;	// skip first '['
+	p2++;
 
 	while (level)
 	{
@@ -147,7 +149,7 @@ bool Smaller(const char* p1, const char* p2)
 
 std::pair<int, int> CheckKeys(const char* p1, const char* p2)	// assumes Smaller(p1, p2)
 {
-	constexpr auto Key1 = "[2]]", Key2 = "[6]]";
+	constexpr auto Key1 = "[[2]]", Key2 = "[[6]]";
 	int nkey1 = 0, nkey2 = 0;
 	if (Smaller(p1, Key1))
 	{
@@ -194,7 +196,7 @@ bool Run(const wchar_t* file)
 		int nl = FindChar(ptr, endPtr, '\n');
 		auto ptr2 = ptr + nl + 1;
 
-		if (Smaller(++ptr, ++ptr2))
+		if (Smaller(ptr, ptr2))
 		{
 			//std::cout << pair << std::endl;
 			result += pair;
@@ -225,13 +227,13 @@ int main()
 {
 	const wchar_t* inputs[] =
 	{
-		L"example.txt",
+		//L"example.txt",
 		L"input.txt",
 		L"aoc_2022_day13_large-1.txt",
 		L"aoc_2022_day13_large-2.txt",
 	};
 
-	constexpr int NumRuns = 1;
+	constexpr int NumRuns = 5;
 	for (auto f : inputs)
 	{
 		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
