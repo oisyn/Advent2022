@@ -18,15 +18,20 @@ int FindChar(const char* ptr, const char* end, char c)
 	return max;
 }
 
-struct List { };
-struct ListEnd { };
-using Token = std::variant<List, ListEnd, int>;
-
 enum TokenType
 {
 	TokenList,
 	TokenListEnd,
 	TokenNumber,
+};
+
+struct Token
+{
+	int value;
+	TokenType type;
+
+	Token(TokenType t) : type(t) { }
+	Token(int v) : value(v), type(TokenNumber) { }
 };
 
 
@@ -36,16 +41,19 @@ Token GetToken(const char*& _ptr)
 	if (*ptr == ',')
 		ptr++;
 	else if (*ptr == ']')
-		return _ptr++, ListEnd{ };
+		return _ptr++, TokenList;
 
 	if (*ptr == '[')
-		return _ptr = ++ptr, List{ };
+		return _ptr = ++ptr, TokenList;
 
-	auto start = ptr;
+	int n = *ptr - '0';
 	while (*ptr != ',' && *ptr != ']')
+	{
+		n = n * 10 + *ptr - '0';
 		ptr++;
+	}
 	_ptr = ptr;
-	return (int)conv(start, ptr);
+	return n;
 }
 
 bool Smaller(const char* p1, const char* p2)
@@ -63,88 +71,82 @@ bool Smaller(const char* p1, const char* p2)
 		//std::cout << std::format("t1: {}, t2: {}\n", tokenNames[t1.index()], tokenNames[t2.index()]);
 
 
-		if (t1.index() == TokenList)
+		if (t1.type == TokenList)
 		{
-			if (t2.index() == TokenList)
+			if (t2.type == TokenList)
 			{
 				level++;
 				continue;
 			}
 
-			if (t2.index() == TokenListEnd)
+			if (t2.type == TokenListEnd)
 				return false;
 
 			// t2 is a number, p1 should parse to a (nested) empty list or a (nested) single item list with number <= t2
 			int nested = 1;
 			t1 = GetToken(p1);
-			while (t1.index() == TokenList)
+			while (t1.type == TokenList)
 			{
 				nested++;
 				t1 = GetToken(p1);
 			}
-			if (t1.index() == TokenListEnd)	// (nested) empty list < any number
+			if (t1.type == TokenListEnd)	// (nested) empty list < any number
 				return true;
 
-			int n1 = std::get<int>(t1);
-			int n2 = std::get<int>(t2);
-			if (n1 != n2)
-				return n1 < n2;
+			if (t1.value != t2.value)
+				return t1.value < t2.value;
 
 			while (nested)	// undo nesting
 			{
 				t1 = GetToken(p1);
-				if (t1.index() != TokenListEnd)
+				if (t1.type != TokenListEnd)
 					return false;
 				nested--;
 			}
 		}
-		else if (t1.index() == TokenListEnd)
+		else if (t1.type == TokenListEnd)
 		{
-			if (t2.index() != TokenListEnd)
+			if (t2.type != TokenListEnd)
 				return true;
 			level--;
 		}
 		else
 		{
 			// t1 is number
-			if (t2.index() == TokenListEnd)
+			if (t2.type == TokenListEnd)
 				return false;
-			if (t2.index() == TokenNumber)
+			if (t2.type == TokenNumber)
 			{
-				int n1 = std::get<int>(t1);
-				int n2 = std::get<int>(t2);
-				if (n1 != n2)
-					return n1 < n2;
+				if (t1.value != t2.value)
+					return t1.value < t2.value;
 				continue;
 			}
 
 			// t2 is a list, p2 should parse to a (nested) list with one number or more, where the first number >= t1
 			int nested = 1;
 			t2 = GetToken(p2);
-			while (t2.index() == TokenList)
+			while (t2.type == TokenList)
 			{
 				nested++;
 				t2 = GetToken(p2);
 			}
-			if (t2.index() == TokenListEnd)	// any number > (nested) empty list
+			if (t2.type == TokenListEnd)	// any number > (nested) empty list
 				return false;
 
-			int n1 = std::get<int>(t1);
-			int n2 = std::get<int>(t2);
-			if (n1 != n2)
-				return n1 < n2;
+			if (t1.value != t2.value)
+				return t1.value < t2.value;
 
 			while (nested)	// undo nesting
 			{
 				t2 = GetToken(p2);
-				if (t2.index() != TokenListEnd)
+				if (t2.type != TokenListEnd)
 					return true;
 				nested--;
 			}
 		}
 	}
 
-	return true;
+	return false;
 }
 
 std::pair<int, int> CheckKeys(const char* p1, const char* p2)	// assumes Smaller(p1, p2)
