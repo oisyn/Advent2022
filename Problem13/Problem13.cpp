@@ -6,7 +6,7 @@ int FindChar(const char* ptr, const char* end, char c)
 {
 	auto allC = _mm256_set1_epi8(c);
 	constexpr uint RegSize = sizeof(allC);
-	uint max = end - ptr;
+	uint max = uint(end - ptr);
 
 	for (uint offset = 0; offset < max; offset += RegSize)
 	{
@@ -18,157 +18,126 @@ int FindChar(const char* ptr, const char* end, char c)
 	return max;
 }
 
-enum TokenType
+
+constexpr bool Digit(char c)
 {
-	TokenList,
-	TokenListEnd,
-	TokenNumber,
-};
+	return (c & 0b0011'0000) == 0b0011'0000;
+}
 
-struct Token
+int GetNumber(const char*& ptr)
 {
-	int value;
-	TokenType type;
-
-	Token(TokenType t) : type(t) { }
-	Token(int v) : value(v), type(TokenNumber) { }
-};
-
-
-Token GetToken(const char*& _ptr)
-{
-	auto ptr = _ptr;
-	if (*ptr == ',')
-		ptr++;
-	else if (*ptr == ']')
-		return _ptr++, TokenList;
-
-	if (*ptr == '[')
-		return _ptr = ++ptr, TokenList;
-
-	int n = *ptr - '0';
-	while (*ptr != ',' && *ptr != ']')
-	{
-		n = n * 10 + *ptr - '0';
-		ptr++;
-	}
-	_ptr = ptr;
+	int n = *ptr++ - '0';
+	while (Digit(*ptr)) // (*ptr != ',' && *ptr != ']')
+		n = n * 10 + *ptr++ - '0';
 	return n;
 }
 
-bool Smaller(const char* p1, const char* p2)
+bool ComesBefore(const char* p1, const char* p2)
 {
-	int level = 1;
 	p1++;	// skip first '['
 	p2++;
 
-	while (level)
+	for(;;)
 	{
-		//static const char* tokenNames[] = { "list", "list-end", "number" };
-		//std::cout << std::format("p1: {}\np2: {}\n", std::string_view{ p1, strcspn(p1, "\n") }, std::string_view{ p2, strcspn(p2, "\n") });
-		auto t1 = GetToken(p1);
-		auto t2 = GetToken(p2);
-		//std::cout << std::format("t1: {}, t2: {}\n", tokenNames[t1.index()], tokenNames[t2.index()]);
+		while (*p1 == *p2 && !Digit(*p1))
+			p1++, p2++;
 
+		if (*p1 == ']')
+			return true;
+		if (*p2 == ']')
+			return false;
 
-		if (t1.type == TokenList)
+		if (*p1 == '[')
 		{
-			if (t2.type == TokenList)
-			{
-				level++;
-				continue;
-			}
-
-			if (t2.type == TokenListEnd)
-				return false;
-
-			// t2 is a number, p1 should parse to a (nested) empty list or a (nested) single item list with number <= t2
-			int nested = 1;
-			t1 = GetToken(p1);
-			while (t1.type == TokenList)
-			{
-				nested++;
-				t1 = GetToken(p1);
-			}
-			if (t1.type == TokenListEnd)	// (nested) empty list < any number
+			// p2 is a number, p1 should parse to a (nested) empty list or a (nested) single item list with number <= p2
+			auto pstart = p1;
+			while (*++p1 == '[');
+			if (*p1 == ']')	// (nested) empty list < any number
 				return true;
+			int nested = int(p1 - pstart);
 
-			if (t1.value != t2.value)
-				return t1.value < t2.value;
+			int n1 = GetNumber(p1);
+			int n2 = GetNumber(p2);
+			if (n1 != n2)
+				return n1 < n2;
 
-			while (nested)	// undo nesting
-			{
-				t1 = GetToken(p1);
-				if (t1.type != TokenListEnd)
+			while (nested--)	// undo nesting
+				if (*p1++ != ']')
 					return false;
-				nested--;
-			}
 		}
-		else if (t1.type == TokenListEnd)
+		else if (*p2 == '[')
 		{
-			if (t2.type != TokenListEnd)
-				return true;
-			level--;
+			// p1 is a number, p2 should parse to a (nested) list with one number or more, where the first number >= p1
+			auto pstart = p2;
+			while (*++p2 == '[');
+			if (*p2 == ']')	// (nested) empty list > any number
+				return false;
+			int nested = int(p2 - pstart);
+
+			int n1 = GetNumber(p1);
+			int n2 = GetNumber(p2);
+			if (n1 != n2)
+				return n1 < n2;
+
+			while (nested--)	// undo nesting
+				if (*p2++ != ']')
+					return true;
 		}
 		else
 		{
-			// t1 is number
-			if (t2.type == TokenListEnd)
-				return false;
-			if (t2.type == TokenNumber)
-			{
-				if (t1.value != t2.value)
-					return t1.value < t2.value;
-				continue;
-			}
-
-			// t2 is a list, p2 should parse to a (nested) list with one number or more, where the first number >= t1
-			int nested = 1;
-			t2 = GetToken(p2);
-			while (t2.type == TokenList)
-			{
-				nested++;
-				t2 = GetToken(p2);
-			}
-			if (t2.type == TokenListEnd)	// any number > (nested) empty list
-				return false;
-
-			if (t1.value != t2.value)
-				return t1.value < t2.value;
-
-			while (nested)	// undo nesting
-			{
-				t2 = GetToken(p2);
-				if (t2.type != TokenListEnd)
-					return true;
-				nested--;
-			}
+			// both numbers
+			int n1 = GetNumber(p1);
+			int n2 = GetNumber(p2);
+			if (n1 != n2)
+				return n1 < n2;
 		}
-	}
 
-	return false;
+		while (*p1 == ']')
+		{
+			if (*p2++ != ']')
+				return true;
+			p1++;
+		}
+
+		if (*p2 == ']')
+			return false;
+
+		p1++;	// both ','
+		p2++;
+	}
+}
+
+bool ComesBeforeKey(const char* p, int k)
+{
+	char c = k + '0';
+
+	while (*++p == '[');
+	if (*p != ']' && *p++ >= c)
+		return false;
+	return !Digit(*p);
 }
 
 std::pair<int, int> CheckKeys(const char* p1, const char* p2)	// assumes Smaller(p1, p2)
 {
-	constexpr auto Key1 = "[[2]]", Key2 = "[[6]]";
+	constexpr auto Key1 = 2, Key2 = 6;
 	int nkey1 = 0, nkey2 = 0;
-	if (Smaller(p1, Key1))
+
+	if (ComesBeforeKey(p1, Key1))
 	{
 		//std::cout << std::string_view{ p1 - 1, strcspn(p1, "\n") + 1 } << std::endl;
 		nkey1++, nkey2++;
-		if (Smaller(p2, Key1))
+		if (ComesBeforeKey(p2, Key1))
 		{
 			//std::cout << std::string_view{ p2 - 1, strcspn(p2, "\n") + 1 } << std::endl;
 			nkey1++, nkey2++;
 		}
-		else if (Smaller(p2, Key2))
+		else if (ComesBeforeKey(p2, Key2))
 			nkey2++;
 	}
-	else if (Smaller(p1, Key2))
+	else if (ComesBeforeKey(p1, Key2))
 	{
 		nkey2++;
-		if (Smaller(p2, Key2))
+		if (ComesBeforeKey(p2, Key2))
 			nkey2++;
 	}
 
@@ -198,7 +167,7 @@ bool Run(const wchar_t* file)
 		int nl = FindChar(ptr, endPtr, '\n');
 		auto ptr2 = ptr + nl + 1;
 
-		if (Smaller(ptr, ptr2))
+		if (ComesBefore(ptr, ptr2))
 		{
 			//std::cout << pair << std::endl;
 			result += pair;
@@ -233,6 +202,7 @@ int main()
 		L"input.txt",
 		L"aoc_2022_day13_large-1.txt",
 		L"aoc_2022_day13_large-2.txt",
+		L"aoc_2022_day13_large-3.txt",
 	};
 
 	constexpr int NumRuns = 5;
