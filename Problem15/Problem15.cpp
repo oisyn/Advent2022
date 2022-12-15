@@ -124,10 +124,16 @@ bool Run(const wchar_t* file)
 	std::vector<Line> linesDown, linesUp;
 	linesDown.reserve(sensors.size());
 	linesUp.reserve(sensors.size());
+	std::ranges::sort(sensors, [&](auto& a, auto& b) { return a.x - a.minDist < b.x - b.minDist; });
+
 	for (auto i : std::views::iota(0, (int)sensors.size() - 1))
 	{
+		int max = sensors[i].x + sensors[i].minDist + 2;
 		for (auto j : std::views::iota(i + 1, (int)sensors.size()))
 		{
+			if (sensors[j].x - sensors[j].minDist > max)
+				break;
+
 			if (std::abs(sensors[i].x - sensors[j].x) + std::abs(sensors[i].y - sensors[j].y) == sensors[i].minDist + sensors[j].minDist + 2)
 			{
 				//std::cout << std::format("({}, {}) - ({}, {})\n", sensors[i].x, sensors[i].y, sensors[j].x, sensors[j].y);
@@ -197,12 +203,12 @@ int main()
 		//L"input.txt",
 		//L"input-soultaker.txt",
 		//L"input-frankmennink.txt",
-		//L"aoc_2022_day15_large-1.txt",
-		//L"aoc_2022_day15_large-2.txt",
+		L"aoc_2022_day15_large-1.txt",
+		L"aoc_2022_day15_large-2.txt",
 		L"aoc_2022_day15_large-3.txt",
 	};
 
-	constexpr int NumRuns = 5;
+	constexpr int NumRuns = 1;
 	for (auto f : inputs)
 	{
 		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
