@@ -14,6 +14,29 @@ int FindChar(const char* ptr, char c)
 	return -1;
 }
 
+constexpr bool Verbose = false;
+
+template<class... T>
+void vprintln(std::_Fmt_string<T...> fmt, T&&... args)
+{
+	if constexpr (Verbose)
+	{
+		static std::locale loc("en-US");
+		static Timer lastTime;
+		static bool running = false;
+
+		if (running)
+		{
+			lastTime.Stop();
+			println("-- {:L}us", lastTime.GetTime());
+		}
+		println(fmt, std::forward<T>(args)...);
+		running = true;
+		lastTime.Restart();
+	}
+}
+
+
 bool Run(const wchar_t* file)
 {
 	Timer total(AutoStart);
@@ -36,6 +59,10 @@ bool Run(const wchar_t* file)
 	constexpr int MaxValves = 26 * 26;
 	std::vector<Valve> valves(MaxValves);
 	std::vector<int> relevantValves;
+	int totalFlowRate = 0;
+
+
+	vprintln("Reading file");
 
 	while (ptr < endPtr)
 	{
@@ -46,6 +73,7 @@ bool Run(const wchar_t* file)
 		ptr += 17;
 		int n = FindChar(ptr, ';');
 		valve.rate = conv(ptr, n);
+		totalFlowRate += valve.rate;
 		ptr += n + 24;
 		if (*ptr == ' ')
 			ptr++;
@@ -66,11 +94,15 @@ bool Run(const wchar_t* file)
 			relevantValves.push_back(valveIdx);
 		}
 	}
+
 	tload.Stop();
 
 	Timer talgo1(AutoStart);
 	int maxRate = 0;
+	std::unordered_map<ullong, int> maxScores;
 	{
+		vprintln("Calculating distances");
+
 		// find shortest path from each relevant valve to all other relevant valves
 		std::deque<int> queue;
 		std::vector<int> costs(MaxValves);
@@ -100,22 +132,25 @@ bool Run(const wchar_t* file)
 					}
 				}
 			}
+
+			std::ranges::sort(valves[valveIdx].valveCosts, [&](auto& a, auto& b) { return valves[a.first].rate > valves[b.first].rate; });
 		}
 		if (!valves[0].rate)
 			relevantValves.pop_back();
 
-		struct State { int rate, time, valveIdx; ullong usedValves; };
+		vprintln("Running part 1");
+		struct State { int rate, time, valveIdx; ullong usedValves; int pureRate; };
 
 		constexpr int MaxTime = 30;
-		std::deque<State> stateQueue;
+		std::vector<State> stateQueue;
 		stateQueue.emplace_back(0, MaxTime);
 		if (valves[0].rate)	// if we can open the start valve, also try that as first action
 			stateQueue.emplace_back((MaxTime - 1) * valves[0].rate, MaxTime - 1, 0, 1);
 
-		while (!stateQueue.empty())
+		int statePos = 0;
+		while (statePos < (int)stateQueue.size())
 		{
-			auto state = stateQueue.front();
-			stateQueue.pop_front();
+			auto state = stateQueue[statePos++];
 
 			auto& valve = valves[state.valveIdx];
 
@@ -130,128 +165,50 @@ bool Run(const wchar_t* file)
 				if (newState.time < 0)
 					continue;
 				newState.rate += newState.time * valves[v].rate;
+				newState.pureRate += valves[v].rate;
 				maxRate = std::max(maxRate, newState.rate);
 				newState.valveIdx = v;
 				newState.usedValves |= valveMask;
-				stateQueue.push_back(newState);
+
+				if (newState.time > 1 && newState.rate + (totalFlowRate - newState.pureRate) * (newState.time - 1) > maxRate)
+					stateQueue.push_back(newState);
+
+				if (newState.time >= 4)
+				{
+					int rate = newState.rate - 4 * newState.pureRate;
+					auto& score = maxScores[newState.usedValves];
+					if (score < rate)
+						score = rate;
+				}
 			}
 		}
-	}
-	std::cout << "Part1 done\n";
+	} 
 	talgo1.Stop();
 
 	Timer talgo2(AutoStart);
+	vprintln("Running part 2");
 	int maxRate2 = 0;
 	{
-		struct State { int rate, time, valveIdx, valveIdxOther, otherTimeLeft; ullong usedValves; };
-
-		constexpr int MaxTime = 26;
-		static std::deque<State> stateQueue;
-		stateQueue.emplace_back(0, MaxTime);
-		if (valves[0].rate)	// if we can open the start valve, also try that as first action
+		int num = 0;
+		for (auto it = maxScores.begin(); it != maxScores.end(); ++it)
 		{
-			State newState = { valves[0].rate * (MaxTime - 1), MaxTime - 1 };
-			newState.usedValves = 1;
-			for (auto [v, c] : valves[0].valveCosts)
+			auto [m, s] = *it;
+			for (auto it2 = std::next(it); it2 != maxScores.end(); ++it2)
 			{
-				if (c >= MaxTime)
+				auto [m2, s2] = *it2;
+				if (m & m2)
 					continue;
-				newState.rate += (MaxTime - c - 1) * valves[v].rate;
-				maxRate2 = std::max(maxRate2, newState.rate);
-				newState.valveIdxOther = v;
-				newState.otherTimeLeft = c;
-				newState.usedValves = 1 | (1ull << valves[v].relIdx);
-				stateQueue.push_back(newState);
+				//if (s + s2 > maxRate2)
+				//	std::cout << std::format("{:b} + {:b} -> {}+{}={}\n", m, m2, s, s2, s + s2);
+				maxRate2 = std::max(maxRate2, s + s2);
 			}
 		}
-
-		int iterations = 0;
-		while (!stateQueue.empty())
-		{
-			auto state = stateQueue.front();
-			stateQueue.pop_front();
-
-			//if (!(++iterations % 1000000))
-			//	std::cout << std::format("\r{}      ", stateQueue.size());
-
-			auto& valve = valves[state.valveIdx];
-			auto usedValves = state.usedValves;
-
-			for (auto [v, c] : valve.valveCosts)
-			{
-				ullong valveMask = 1ull << valves[v].relIdx;
-				if (usedValves & valveMask)
-					continue;
-
-				if (c > state.time)
-					continue;
-
-				auto newState = state;
-				newState.rate += (state.time - c) * valves[v].rate;
-				maxRate2 = std::max(maxRate2, newState.rate);
-				newState.valveIdx = v;
-				newState.usedValves |= valveMask;
-
-				if (newState.otherTimeLeft)
-				{	// the other one is still busy, figure out which one finishes first
-					if (newState.otherTimeLeft < c)
-					{
-						newState.time -= newState.otherTimeLeft;
-						newState.otherTimeLeft = c - newState.otherTimeLeft;
-						std::swap(newState.valveIdx, newState.valveIdxOther);
-					}
-					else
-					{
-						newState.time -= c;
-						newState.otherTimeLeft -= c;
-					}
-					stateQueue.push_back(newState);
-				}
-				else
-				{	// the other one finished as well
-					usedValves |= valveMask; // make sure we don't revisit states that we already generated a state for
-
-					auto& valve2 = valves[state.valveIdxOther];
-					for (auto [v2, c2] : valve2.valveCosts)
-					{
-						ullong valveMask2 = 1ull << valves[v2].relIdx;
-						if (usedValves & valveMask2)
-							continue;
-
-						if (c2 > state.time)
-							continue;
-
-						State newState2 = newState;
-						newState2.rate += (state.time - c2) * valves[v2].rate;
-						maxRate2 = std::max(maxRate2, newState2.rate);
-						newState2.valveIdxOther = v2;
-						newState2.usedValves |= valveMask2;
-						usedValves |= valveMask2; // make sure we don't revisit states that we already generated a state for
-
-						if (c2 < c)
-						{
-							newState2.time -= c2;
-							newState2.otherTimeLeft = c - c2;
-							std::swap(newState.valveIdx, newState2.valveIdxOther);
-						}
-						else
-						{
-							newState2.time -= c;
-							newState2.otherTimeLeft = c2 - c;
-						}
-						stateQueue.push_back(newState2);
-					}
-				}
-
-			}
-		}
-
 	}
 
 	talgo2.Stop();
 
 	total.Stop();
-	std::cout << std::format(std::locale("en-US"), "Time: {:L}us (load:{:L}us, algo1:{:L}us, algo2:{:L}us)\nPart 1: {}\nPart 2: {}\n", total.GetTime(), tload.GetTime(), talgo1.GetTime(), talgo2.GetTime(), maxRate, maxRate2);
+	println("Time: {:L}us (load:{:L}us, part1:{:L}us, part2:{:L}us)\nPart 1: {}\nPart 2: {}", total.GetTime(), tload.GetTime(), talgo1.GetTime(), talgo2.GetTime(), maxRate, maxRate2);
 
 	return true;
 }
@@ -261,21 +218,25 @@ int main()
 {
 	const wchar_t* inputs[] =
 	{
-		L"example.txt",
+		//L"example.txt",
 		L"input.txt",
-		//L"aoc_2022_day15_large-1.txt",
-		//L"aoc_2022_day15_large-2.txt",
-		//L"aoc_2022_day15_large-3.txt",
+		//L"aoc_2022_day16_large-1.txt",
+		//L"aoc_2022_day16_large-2.txt",
+		//L"aoc_2022_day16_large-3.txt",
+		//L"aoc_2022_day16_large-4.txt",
+		//L"aoc_2022_day16_large-5.txt",
+		//L"aoc_2022_day16_large-6.txt",
+		//L"aoc_2022_day16_large-7.txt",
 	};
 
 	constexpr int NumRuns = 1;
 	for (auto f : inputs)
 	{
-		std::wcout << std::format(L"\n===[ {} ]==========\n", f);
+		println(L"\n===[ {} ]==========", f);
 		for (int i = 0; i < NumRuns; i++)
 		{
 			if (!Run(f))
-				std::wcerr << std::format(L"Can't open `{}`\n", f);
+				eprintln(L"Can't open `{}`", f);
 		}
 	}
 }

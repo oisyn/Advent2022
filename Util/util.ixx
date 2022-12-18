@@ -134,6 +134,33 @@ uint conv(const char* str, const char* end)
 	return conv(str, int(end - str));
 }
 
+template<class... T>
+void println(std::_Fmt_string<T...> fmt, T&&... args)
+{
+	static std::locale loc("en-US");
+	std::cout << std::format(loc, fmt, std::forward<T>(args)...) << "\n";
+}
+
+template<class... T>
+void println(std::_Fmt_wstring<T...> fmt, T&&... args)
+{
+	static std::locale loc("en-US");
+	std::wcout << std::format(loc, fmt, std::forward<T>(args)...) << L"\n";
+}
+
+template<class... T>
+void eprintln(std::_Fmt_string<T...> fmt, T&&... args)
+{
+	static std::locale loc("en-US");
+	std::cerr << std::format(loc, fmt, std::forward<T>(args)...) << "\n";
+}
+
+template<class... T>
+void eprintln(std::_Fmt_wstring<T...> fmt, T&&... args)
+{
+	static std::locale loc("en-US");
+	std::wcerr << std::format(loc, fmt, std::forward<T>(args)...) << L"\n";
+}
 
 class Splitter
 {
