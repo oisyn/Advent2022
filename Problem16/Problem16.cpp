@@ -100,6 +100,7 @@ bool Run(const wchar_t* file)
 	Timer talgo1(AutoStart);
 	int maxRate = 0;
 	std::unordered_map<ullong, int> maxScores;
+
 	{
 		vprintln("Calculating distances");
 
@@ -189,18 +190,36 @@ bool Run(const wchar_t* file)
 	vprintln("Running part 2");
 	int maxRate2 = 0;
 	{
-		int num = 0;
-		for (auto it = maxScores.begin(); it != maxScores.end(); ++it)
+		std::vector<std::vector<std::pair<ullong, int>>> scoresByLowedUsedBit(relevantValves.size());
+
+		vprintln("Grouping results");
+		for (auto [m, s] : maxScores)
 		{
-			auto [m, s] = *it;
-			for (auto it2 = std::next(it); it2 != maxScores.end(); ++it2)
+			auto idx = std::countr_zero(m);
+			scoresByLowedUsedBit[idx].emplace_back(m, s);
+		}
+
+		for (auto& v : scoresByLowedUsedBit)
+			std::ranges::sort(v, [](auto& a, auto& b) { return a.second > b.second; });
+
+		vprintln("Finding pairs");
+		ullong allValvesMask = (1ull << relevantValves.size()) - 1;
+		for (auto [m, s] : maxScores)
+		{
+			ullong inverted = ~m & allValvesMask;
+			while (inverted)
 			{
-				auto [m2, s2] = *it2;
-				if (m & m2)
-					continue;
-				//if (s + s2 > maxRate2)
-				//	std::cout << std::format("{:b} + {:b} -> {}+{}={}\n", m, m2, s, s2, s + s2);
-				maxRate2 = std::max(maxRate2, s + s2);
+				auto idx = std::countr_zero(inverted);
+				for (auto [m2, s2] : scoresByLowedUsedBit[idx])
+				{
+					if (s + s2 < maxRate2)
+						break;
+					if (m & m2)
+						continue;
+					maxRate2 = s + s2;
+					break;
+				}
+				inverted &= inverted - 1;
 			}
 		}
 	}
@@ -220,13 +239,13 @@ int main()
 	{
 		//L"example.txt",
 		L"input.txt",
-		//L"aoc_2022_day16_large-1.txt",
-		//L"aoc_2022_day16_large-2.txt",
-		//L"aoc_2022_day16_large-3.txt",
-		//L"aoc_2022_day16_large-4.txt",
+		L"aoc_2022_day16_large-1.txt",
+		L"aoc_2022_day16_large-2.txt",
+		L"aoc_2022_day16_large-3.txt",
+		L"aoc_2022_day16_large-4.txt",
 		//L"aoc_2022_day16_large-5.txt",
 		//L"aoc_2022_day16_large-6.txt",
-		//L"aoc_2022_day16_large-7.txt",
+		L"aoc_2022_day16_large-7.txt",
 	};
 
 	constexpr int NumRuns = 1;
